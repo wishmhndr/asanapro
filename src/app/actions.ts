@@ -7,6 +7,7 @@ import bcrypt from 'bcryptjs'
 import { SignJWT, jwtVerify } from 'jose'
 import { cookies } from 'next/headers'
 import { sendVerificationEmail, generateOTP } from '@/lib/email'
+import { Client } from '@prisma/client'
 
 const SECRET_KEY = new TextEncoder().encode(process.env.JWT_SECRET || 'default-secret-key-change-me')
 
@@ -134,7 +135,7 @@ export async function getDashboardData() {
             take: 5
         });
 
-        const activities = recentClients.map(c => ({
+        const activities = recentClients.map((c: Client) => ({
             id: c.id,
             text: `Klien baru terdaftar: ${c.name}`,
             at: c.createdAt.toISOString()
