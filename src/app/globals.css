@@ -1,0 +1,90 @@
+:root {
+  --ap-radius: 1.25rem;
+  --ap-radius-lg: 1.75rem;
+}
+
+body {
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif;
+  background-color: #f8f9fa; /* bg-light */
+}
+
+.ap-card {
+  border-radius: var(--ap-radius-lg);
+}
+
+.ap-pill {
+  border-radius: 999px;
+}
+
+.ap-soft {
+  background: rgba(255, 255, 255, .75);
+  backdrop-filter: blur(10px);
+}
+
+.ap-nav {
+  position: sticky;
+  top: 0;
+  z-index: 1020;
+}
+
+.ap-main {
+  padding-bottom: 84px;
+}
+
+.ap-bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1030;
+}
+
+.ap-bottom-nav .nav-link {
+  font-size: .75rem;
+}
+
+.ap-icon {
+  font-size: 1.1rem;
+  vertical-align: -.2rem;
+}
+
+.ap-kpi {
+  color: #fff;
+  background: linear-gradient(135deg, #0f172a, #111827);
+}
+
+.ap-kpi.ap-kpi-emerald {
+  background: linear-gradient(135deg, #059669, #0f766e);
+}
+
+.ap-kpi.ap-kpi-rose {
+  background: linear-gradient(135deg, #e11d48, #9f1239);
+}
+
+.ap-hero {
+  background: radial-gradient(1000px 500px at 0% 0%, rgba(15, 23, 42, .12), transparent 60%), radial-gradient(1000px 500px at 100% 0%, rgba(2, 132, 199, .10), transparent 60%);
+}
+
+.ap-photo {
+  aspect-ratio: 16/10;
+  object-fit: cover;
+}
+
+.ap-photo-sm {
+  width: 84px;
+  height: 64px;
+  object-fit: cover;
+}
+
+.ap-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.ap-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.ap-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}

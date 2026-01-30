@@ -1,0 +1,110 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String   // Hashed password
+  name      String
+  agency    String?
+  phoneNumber String?
+  
+  // Email Verification
+  isEmailVerified      Boolean   @default(false)
+  verificationToken    String?
+  verificationExpiry   DateTime?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  properties Property[]
+  clients    Client[]
+  reports    Report[]
+}
+
+model Property {
+  id          String   @id @default(uuid())
+  title       String
+  description String
+  price       Float
+  location    String
+  status      String   @default("AVAILABLE") // AVAILABLE, SOLD, RENTED
+  
+  landArea     Float?
+  buildingArea Float?
+  yearBuilt    Int?
+  features     String? // Spesifikasi / Fasilitas
+  legality     String? // SHM, HGB, etc
+  
+  // Relations
+  agentId     String
+  agent       User     @relation(fields: [agentId], references: [id])
+  
+  images      PropertyImage[]
+  
+  interestedClients Client[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model PropertyImage {
+  id         String   @id @default(uuid())
+  url        String
+  
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+}
+
+model Client {
+  id        String   @id @default(uuid())
+  name      String
+  email     String?
+  whatsapp  String
+  status    String   @default("NEW") // NEW, PROSPECT, DEAL, LOST
+  notes     String?
+
+  minBudget Float?
+  maxBudget Float?
+
+  agentId   String
+  agent     User     @relation(fields: [agentId], references: [id])
+  
+  interactionLogs InteractionLog[]
+  interestedProperties Property[]
+
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model InteractionLog {
+  id        String   @id @default(uuid())
+  content   String
+  
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+}
+
+model Report {
+  id        String   @id @default(uuid())
+  title     String?
+  content   String
+  category  String   @default("GENERAL") // GENERAL, ACTIVITY, INCIDENT
+  
+  agentId   String
+  agent     User     @relation(fields: [agentId], references: [id])
+  
+  createdAt DateTime @default(now())
+}
