@@ -2,6 +2,7 @@
 
 import { prisma } from '@/lib/db'
 import { redirect } from 'next/navigation'
+import { revalidatePath } from 'next/cache'
 import { cookies } from 'next/headers'
 import { jwtVerify } from 'jose'
 
@@ -66,5 +67,7 @@ export async function addProperty(prevState: any, formData: FormData) {
         return { message: 'Terjadi kesalahan sistem saat menyimpan properti.' }
     }
 
+    revalidatePath('/app/listing')
+    revalidatePath('/app/dashboard')
     redirect('/app/listing')
 }

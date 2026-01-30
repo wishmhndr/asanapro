@@ -2,6 +2,7 @@
 
 import { prisma } from '@/lib/db'
 import { redirect } from 'next/navigation'
+import { revalidatePath } from 'next/cache'
 import bcrypt from 'bcryptjs'
 import { SignJWT, jwtVerify } from 'jose'
 import { cookies } from 'next/headers'
@@ -52,7 +53,12 @@ export async function loginAgent(prevState: any, formData: FormData) {
             });
 
             // Send OTP email
-            await sendVerificationEmail(user.email, otp, user.name);
+            const emailRes = await sendVerificationEmail(user.email, otp, user.name);
+            if (!emailRes.success) {
+                console.error('Login: Failed to send OTP:', emailRes.error);
+                // We still proceed, but the user might be stuck. 
+                // In a real app, you might want to show an error message.
+            }
 
             // Store userId in cookie for verification page
             (await cookies()).set('pendingVerification', user.id, {
@@ -75,7 +81,9 @@ export async function loginAgent(prevState: any, formData: FormData) {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
             maxAge: 60 * 60 * 24 * 7, // 7 days
+            expires: new Date(Date.now() + 60 * 60 * 24 * 7 * 1000),
             path: '/',
+            sameSite: 'lax',
         })
 
     } catch (e) {
@@ -199,6 +207,8 @@ export async function createClient(formData: FormData) {
                 agentId: user.id
             }
         });
+        revalidatePath('/app/clients');
+        revalidatePath('/app/dashboard');
         return { success: true, clientId: client.id };
     } catch (e) {
         console.error(e);
@@ -225,6 +235,8 @@ export async function updateClient(id: string, formData: FormData) {
                 notes
             }
         });
+        revalidatePath(`/app/clients/${id}`);
+        revalidatePath('/app/clients');
         return { success: true, client };
     } catch (e) {
         console.error(e);
@@ -249,6 +261,7 @@ export async function addInteractionLog(clientId: string, formData: FormData) {
                 clientId: client.id
             }
         });
+        revalidatePath(`/app/clients/${clientId}`);
         return { success: true };
     } catch (e) {
         return { success: false, message: 'Gagal menambah log' };
@@ -263,6 +276,8 @@ export async function deleteClient(id: string) {
         await prisma.client.delete({
             where: { id, agentId: user.id }
         });
+        revalidatePath('/app/clients');
+        revalidatePath('/app/dashboard');
         return { success: true };
     } catch (e) {
         return { success: false, message: 'Gagal menghapus klien' };
@@ -288,6 +303,7 @@ export async function addClientInterest(clientId: string, propertyId: string) {
                 }
             }
         });
+        revalidatePath(`/app/clients/${clientId}`);
         return { success: true };
     } catch (e) {
         console.error(e);
@@ -308,6 +324,7 @@ export async function removeClientInterest(clientId: string, propertyId: string)
                 }
             }
         });
+        revalidatePath(`/app/clients/${clientId}`);
         return { success: true };
     } catch (e) {
         return { success: false, message: 'Gagal menghapus properti' };
@@ -362,6 +379,7 @@ export async function updateSettings(prevState: any, formData: FormData) {
             where: { id: user.id },
             data: { name, agency, phoneNumber }
         });
+        revalidatePath('/app/settings');
         return { message: 'Profil berhasil diperbarui' };
     } catch (e) {
         console.error(e);
@@ -422,6 +440,8 @@ export async function createProperty(formData: FormData) {
                 }
             }
         });
+        revalidatePath('/app/listing');
+        revalidatePath('/app/dashboard');
         return { success: true, propertyId: prop.id };
     } catch (e) {
         console.error(e);
@@ -460,6 +480,8 @@ export async function updateProperty(id: string, formData: FormData) {
                 status
             }
         });
+        revalidatePath(`/app/listing/${id}`);
+        revalidatePath('/app/listing');
         return { success: true };
     } catch (e) {
         console.error(e);
@@ -475,6 +497,8 @@ export async function deleteProperty(id: string) {
         await prisma.property.delete({
             where: { id, agentId: user.id }
         });
+        revalidatePath('/app/listing');
+        revalidatePath('/app/dashboard');
         return { success: true };
     } catch (e) {
         console.error(e);
@@ -534,7 +558,10 @@ export async function registerAgent(prevState: any, formData: FormData) {
         })
 
         // Send OTP email
-        await sendVerificationEmail(user.email, otp, user.name);
+        const emailRes = await sendVerificationEmail(user.email, otp, user.name);
+        if (!emailRes.success) {
+            console.error('Register: Failed to send OTP:', emailRes.error);
+        }
 
         // Store userId in cookie for verification page
         (await cookies()).set('pendingVerification', user.id, {
@@ -614,6 +641,7 @@ export async function createReport(formData: FormData) {
                 agentId: user.id
             }
         });
+        revalidatePath('/app/reports');
         return { success: true };
     } catch (e) {
         console.error(e);
@@ -630,6 +658,7 @@ export async function deleteReport(id: string) {
         await prisma.report.delete({
             where: { id, agentId: user.id }
         });
+        revalidatePath('/app/reports');
         return { success: true };
     } catch (e) {
         return { success: false, message: 'Gagal menghapus laporan' };
@@ -693,7 +722,9 @@ export async function verifyOTP(prevState: any, formData: FormData) {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
             maxAge: 60 * 60 * 24 * 7, // 7 days
+            expires: new Date(Date.now() + 60 * 60 * 24 * 7 * 1000),
             path: '/',
+            sameSite: 'lax',
         });
 
         // Clear pending verification cookie

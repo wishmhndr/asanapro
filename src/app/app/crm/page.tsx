@@ -37,7 +37,15 @@ export default function CrmPage() {
         if (res.success) {
             const closeBtn = document.getElementById('close-crm-modal');
             if (closeBtn) closeBtn.click();
+            // Force cleanup of potential stray backdrops
+            setTimeout(() => {
+                const backdrops = document.querySelectorAll('.modal-backdrop');
+                backdrops.forEach(el => el.remove());
+                document.body.classList.remove('modal-open');
+                document.body.style.overflow = '';
+            }, 100);
             load();
+            router.refresh();
         } else {
             alert(res.message);
         }

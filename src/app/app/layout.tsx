@@ -11,6 +11,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
+        // Cleanup modal backdrops and reset body styles on navigation
+        const cleanupModal = () => {
+            const backdrops = document.getElementsByClassName('modal-backdrop');
+            while (backdrops.length > 0) {
+                backdrops[0].parentNode?.removeChild(backdrops[0]);
+            }
+            document.body.classList.remove('modal-open');
+            document.body.style.overflow = '';
+            document.body.style.paddingRight = '';
+        };
+        cleanupModal();
+    }, [pathname]);
+
+    useEffect(() => {
         setMounted(true);
         async function check() {
             const u = await getMe();

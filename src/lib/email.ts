@@ -3,12 +3,18 @@ import { Resend } from 'resend';
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function sendVerificationEmail(email: string, otp: string, name: string) {
-    try {
-        const { data, error } = await resend.emails.send({
-            from: 'AsanaPro <onboarding@resend.dev>', // Resend default sender untuk testing
-            to: [email],
-            subject: 'Verifikasi Email Anda - AsanaPro',
-            html: `
+  if (!process.env.RESEND_API_KEY) {
+    console.error('RESEND_API_KEY is missing in environment variables');
+    return { success: false, error: 'Email service not configured' };
+  }
+
+  try {
+    console.log(`Attempting to send verification email to: ${email}`);
+    const { data, error } = await resend.emails.send({
+      from: "AsanaPro <noreply@asanagraha.com>",
+      to: [email],
+      subject: 'Verifikasi Email Anda - AsanaPro',
+      html: `
         <!DOCTYPE html>
         <html>
           <head>
@@ -72,20 +78,20 @@ export async function sendVerificationEmail(email: string, otp: string, name: st
           </body>
         </html>
       `,
-        });
+    });
 
-        if (error) {
-            console.error('Error sending email:', error);
-            return { success: false, error };
-        }
-
-        return { success: true, data };
-    } catch (error) {
-        console.error('Error sending email:', error);
-        return { success: false, error };
+    if (error) {
+      console.error('Error sending email:', error);
+      return { success: false, error };
     }
+
+    return { success: true, data };
+  } catch (error) {
+    console.error('Error sending email:', error);
+    return { success: false, error };
+  }
 }
 
 export function generateOTP(): string {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+  return Math.floor(100000 + Math.random() * 900000).toString();
 }

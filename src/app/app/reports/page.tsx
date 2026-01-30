@@ -32,7 +32,14 @@ export default function ReportsPage() {
         if (res.success) {
             const close = document.getElementById("close-report-modal");
             close?.click();
+            // Force cleanup of potential stray backdrops
+            setTimeout(() => {
+                document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+                document.body.classList.remove('modal-open');
+                document.body.style.overflow = '';
+            }, 100);
             load();
+            router.refresh();
         } else {
             alert(res.message);
         }
