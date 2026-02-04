@@ -36,15 +36,15 @@ export default function DashboardPage() {
     };
 
     return (
-        <div className="d-grid gap-3">
-            <div className="row g-3">
+        <div className="d-grid gap-2 gap-md-3 px-0">
+            <div className="row g-2 g-md-3">
                 <div className="col-12 col-md-4">{kpi('Properti Aktif', stats.activeCount, 'Available', 'emerald')}</div>
                 <div className="col-12 col-md-4">{kpi('Properti Terjual', stats.soldCount, 'Sold', 'rose')}</div>
                 <div className="col-12 col-md-4">{kpi('Total Klien', stats.clientCount, 'Total leads', 'slate')}</div>
             </div>
 
             <div className="ap-card card border-0 shadow-sm">
-                <div className="card-body p-4">
+                <div className="card-body p-3 p-md-4">
                     <div className="d-flex align-items-center gap-2">
                         <div className="fw-semibold">Aktivitas Terakhir</div>
                         <div className="ms-auto small text-secondary">Real-time data</div>
@@ -52,7 +52,7 @@ export default function DashboardPage() {
                     <div className="mt-3 d-grid gap-2">
                         {activities.length ? activities.map((a: any) => (
                             <div key={a.id} className="ap-card card border-0 bg-light">
-                                <div className="card-body py-3">
+                                <div className="card-body py-2 py-md-3">
                                     <div className="d-flex align-items-center gap-2">
                                         <div className="small fw-semibold">{a.text}</div>
                                         <div className="ms-auto small text-secondary">{Utils.fmtShort(a.at)}</div>
@@ -65,7 +65,7 @@ export default function DashboardPage() {
             </div>
 
             <div className="ap-card card border-0 shadow-sm">
-                <div className="card-body p-4">
+                <div className="card-body p-3 p-md-4">
                     <div className="fw-semibold">Shortcut</div>
                     <div className="row g-2 mt-2">
                         <div className="col-12 col-md-6"><Link href="/app/listing" className="btn btn-dark w-100 rounded-4">+ Kelola Properti</Link></div>
@@ -74,7 +74,7 @@ export default function DashboardPage() {
                 </div>
             </div>
 
-            <div className="d-lg-none position-fixed" style={{ right: '16px', bottom: '110px', zIndex: 1040 }}>
+            <div className="d-lg-none position-fixed" style={{ right: '12px', bottom: '90px', zIndex: 1040 }}>
                 <Link href="/app/listing" className="btn btn-dark btn-lg rounded-4 shadow">
                     <ion-icon className="ap-icon" name="add-outline"></ion-icon>
                 </Link>

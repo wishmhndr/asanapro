@@ -75,14 +75,14 @@ export async function loginAgent(prevState: any, formData: FormData) {
         const token = await new SignJWT({ userId: user.id, email: user.email })
             .setProtectedHeader({ alg: 'HS256' })
             .setIssuedAt()
-            .setExpirationTime('7d')
+            .setExpirationTime('365d')
             .sign(SECRET_KEY);
 
         (await cookies()).set('session', token, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
-            maxAge: 60 * 60 * 24 * 7, // 7 days
-            expires: new Date(Date.now() + 60 * 60 * 24 * 7 * 1000),
+            maxAge: 60 * 60 * 24 * 365, // 1 year
+            expires: new Date(Date.now() + 60 * 60 * 24 * 365 * 1000),
             path: '/',
             sameSite: 'lax',
         })
@@ -716,14 +716,14 @@ export async function verifyOTP(prevState: any, formData: FormData) {
         const token = await new SignJWT({ userId: user.id, email: user.email })
             .setProtectedHeader({ alg: 'HS256' })
             .setIssuedAt()
-            .setExpirationTime('7d')
+            .setExpirationTime('365d')
             .sign(SECRET_KEY);
 
         (await cookies()).set('session', token, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
-            maxAge: 60 * 60 * 24 * 7, // 7 days
-            expires: new Date(Date.now() + 60 * 60 * 24 * 7 * 1000),
+            maxAge: 60 * 60 * 24 * 365, // 1 year
+            expires: new Date(Date.now() + 60 * 60 * 24 * 365 * 1000),
             path: '/',
             sameSite: 'lax',
         });

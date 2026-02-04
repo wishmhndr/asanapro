@@ -61,9 +61,9 @@ export default function CrmPage() {
     if (loading) return <div className="p-4 text-secondary">Memuat data klien...</div>;
 
     return (
-        <>
+        <div className="px-0">
             <div className="ap-card card border-0 shadow-sm">
-                <div className="card-body p-4">
+                <div className="card-body p-3 p-md-4">
                     <div className="d-flex align-items-center gap-2 flex-wrap">
                         <div className="fw-semibold">CRM</div>
                         <div className="ms-auto">
@@ -147,6 +147,6 @@ export default function CrmPage() {
                     </div>
                 </div>
             </div>
-        </>
+        </div>
     );
 }

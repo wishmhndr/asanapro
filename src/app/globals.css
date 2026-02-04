@@ -5,7 +5,8 @@
 
 body {
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif;
-  background-color: #f8f9fa; /* bg-light */
+  background-color: #f8f9fa;
+  /* bg-light */
 }
 
 .ap-card {
@@ -87,4 +88,137 @@ body {
 
 .ap-mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+/* Mobile responsive fixes */
+@media (max-width: 991.98px) {
+  .container {
+    max-width: 100%;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+
+  .ap-main {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  /* Ensure cards don't overflow */
+  .ap-card {
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  /* Table responsive improvements */
+  .table-responsive {
+    margin-left: -0.75rem;
+    margin-right: -0.75rem;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Prevent text overflow */
+  .text-truncate {
+    max-width: 100%;
+  }
+
+  /* Better button spacing on mobile */
+  .btn-group-mobile {
+    width: 100%;
+  }
+
+  .btn-group-mobile .btn {
+    flex: 1;
+  }
+}
+
+/* Extra small devices (phones, less than 576px) */
+@media (max-width: 575.98px) {
+  body {
+    font-size: 0.9rem;
+  }
+
+  .container {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+
+  /* Reduce card padding on very small screens */
+  .card-body {
+    padding: 0.75rem !important;
+  }
+
+  /* Smaller font sizes for headers */
+  .fs-5 {
+    font-size: 1rem !important;
+  }
+
+  .fs-1 {
+    font-size: 1.75rem !important;
+  }
+
+  /* Better form control sizing */
+  .form-control-lg,
+  .form-select-lg {
+    font-size: 1rem;
+    padding: 0.5rem 0.75rem;
+  }
+
+  /* Adjust button sizes */
+  .btn {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+  }
+
+  .btn-lg {
+    padding: 0.625rem 1rem;
+    font-size: 1rem;
+  }
+
+  /* Table improvements */
+  .table {
+    font-size: 0.75rem;
+  }
+
+  .table th,
+  .table td {
+    padding: 0.5rem 0.25rem;
+  }
+
+  /* Badge sizing */
+  .badge {
+    font-size: 0.7rem;
+    padding: 0.25em 0.5em;
+  }
+
+  /* Modal adjustments */
+  .modal-dialog {
+    margin: 0.5rem;
+  }
+
+  .modal-body {
+    padding: 1rem;
+  }
+
+  /* Bottom nav spacing */
+  .ap-bottom-nav {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Prevent horizontal scroll */
+  body {
+    overflow-x: hidden;
+  }
+
+  .row {
+    margin-left: -0.5rem;
+    margin-right: -0.5rem;
+  }
+
+  .row>* {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
 }

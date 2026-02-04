@@ -57,7 +57,7 @@ export default function ReportsPage() {
     const { props, clients, reports } = data;
 
     return (
-        <div className="d-grid gap-3">
+        <div className="d-grid gap-3 px-0">
 
             {/* HEADER */}
             <div className="ap-card card border-0 shadow-sm">

@@ -69,5 +69,5 @@ export async function addProperty(prevState: any, formData: FormData) {
 
     revalidatePath('/app/listing')
     revalidatePath('/app/dashboard')
-    redirect('/app/listing')
+    return { success: true, message: 'Properti berhasil ditambahkan' }
 }

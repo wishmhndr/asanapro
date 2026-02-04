@@ -10,6 +10,24 @@ export default function AddPropertyModal() {
     const [priceDisplay, setPriceDisplay] = useState('');
     const [priceValue, setPriceValue] = useState('');
 
+    // Handle success - close modal and refresh
+    React.useEffect(() => {
+        if (state?.success) {
+            const closeBtn = document.getElementById('close-modal-btn');
+            closeBtn?.click();
+
+            // Cleanup modal backdrop
+            setTimeout(() => {
+                document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+                document.body.classList.remove('modal-open');
+                document.body.style.overflow = '';
+
+                // Refresh the page to show new property
+                window.location.href = '/app/listing';
+            }, 100);
+        }
+    }, [state]);
+
     const handlePriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const raw = e.target.value.replace(/\D/g, '');
         setPriceValue(raw);
