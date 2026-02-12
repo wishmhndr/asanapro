@@ -7,9 +7,31 @@ const SECRET_KEY = new TextEncoder().encode(process.env.JWT_SECRET || 'default-s
 export async function middleware(request: NextRequest) {
     // Only protect /app routes
     if (request.nextUrl.pathname.startsWith('/app')) {
-        const session = request.cookies.get('session')?.value
+        let session = request.cookies.get('session')?.value
 
+        // Fallback to backup session for PWA
         if (!session) {
+            session = request.cookies.get('session_backup')?.value
+
+            // If backup exists, restore main session
+            if (session) {
+                const response = NextResponse.next()
+                response.cookies.set('session', session, {
+                    httpOnly: true,
+                    secure: process.env.NODE_ENV === 'production',
+                    maxAge: 60 * 60 * 24 * 365,
+                    path: '/',
+                    sameSite: 'lax',
+                })
+
+                try {
+                    await jwtVerify(session, SECRET_KEY)
+                    return response
+                } catch (e) {
+                    return NextResponse.redirect(new URL('/login', request.url))
+                }
+            }
+
             return NextResponse.redirect(new URL('/login', request.url))
         }
 
