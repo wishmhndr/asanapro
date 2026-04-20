@@ -130,6 +130,18 @@ export async function registerAgency(prevState: any, formData: FormData) {
     redirect('/login')
 }
 
+export async function verifyOTP(prevState: any, formData: FormData) {
+    return { success: false, message: 'Belum diimplementasikan' }
+}
+
+export async function resendOTP() {
+    return { success: false, message: 'Belum diimplementasikan' }
+}
+
+export async function getPendingVerificationUser() {
+    return null
+}
+
 // ─────────────────────────────────────────────
 // SETTINGS
 // ─────────────────────────────────────────────
