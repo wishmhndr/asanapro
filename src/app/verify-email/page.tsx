@@ -1,3 +1,4 @@
+// @ts-nocheck
 "use client";
 import { useActionState, useState, useRef, useEffect, KeyboardEvent } from 'react';
 import Link from 'next/link';

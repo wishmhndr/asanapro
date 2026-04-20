@@ -6,96 +6,58 @@ import { revalidatePath } from 'next/cache'
 import bcrypt from 'bcryptjs'
 import { SignJWT, jwtVerify } from 'jose'
 import { cookies } from 'next/headers'
-import { sendVerificationEmail, generateOTP } from '@/lib/email'
-import { Client } from '@prisma/client'
+import { UserRole } from '@prisma/client'
 
 const SECRET_KEY = new TextEncoder().encode(process.env.JWT_SECRET || 'default-secret-key-change-me')
 
-export async function loginAgent(prevState: any, formData: FormData) {
+// ─────────────────────────────────────────────
+// AUTH
+// ─────────────────────────────────────────────
+
+export async function loginUser(prevState: any, formData: FormData) {
     const email = (formData.get('email') as string).toLowerCase().trim()
     const pin = (formData.get('pin') as string).trim()
 
-    if (!email || !pin) return { message: 'Email and PIN required' }
+    if (!email || !pin) return { message: 'Email dan PIN wajib diisi' }
 
     try {
-        console.log('Login attempt:', email);
         const user = await prisma.user.findUnique({
             where: { email },
+            include: { agency: true }
         })
 
-        if (!user) {
-            console.log('User not found');
-            return { message: 'User not registered' }
-        }
+        if (!user) return { message: 'User tidak ditemukan' }
 
-        console.log('User found, verifying PIN...');
         const isValid = await bcrypt.compare(pin, user.password)
-        console.log('PIN valid:', isValid);
+        if (!isValid) return { message: 'PIN salah' }
 
-        if (!isValid) {
-            return { message: 'PIN Salah (Wrong Password)' }
-        }
-
-        // Check email verification
-        if (!user.isEmailVerified) {
-            console.log('Email not verified, sending OTP...');
-
-            // Generate new OTP
-            const otp = generateOTP();
-            const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
-            // Save OTP to database
-            await prisma.user.update({
-                where: { id: user.id },
-                data: {
-                    verificationToken: otp,
-                    verificationExpiry: expiry
-                }
-            });
-
-            // Send OTP email
-            const emailRes = await sendVerificationEmail(user.email, otp, user.name);
-            if (!emailRes.success) {
-                console.error('Login: Failed to send OTP:', emailRes.error);
-                // We still proceed, but the user might be stuck. 
-                // In a real app, you might want to show an error message.
-            }
-
-            // Store userId in cookie for verification page
-            (await cookies()).set('pendingVerification', user.id, {
-                httpOnly: true,
-                maxAge: 60 * 15, // 15 minutes
-                path: '/',
-            });
-
-            return { message: 'Email belum terverifikasi. Kode OTP telah dikirim ke email Anda.', needsVerification: true };
-        }
-
-        // Create session
-        const token = await new SignJWT({ userId: user.id, email: user.email })
+        const token = await new SignJWT({
+            userId: user.id,
+            email: user.email,
+            role: user.role,
+            agencyId: user.agencyId
+        })
             .setProtectedHeader({ alg: 'HS256' })
             .setIssuedAt()
             .setExpirationTime('365d')
-            .sign(SECRET_KEY);
+            .sign(SECRET_KEY)
 
-        (await cookies()).set('session', token, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            maxAge: 60 * 60 * 24 * 365, // 1 year
-            expires: new Date(Date.now() + 60 * 60 * 24 * 365 * 1000),
-            path: '/',
-            sameSite: 'lax',
-        })
-
+            ; (await cookies()).set('session', token, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                maxAge: 60 * 60 * 24 * 365,
+                path: '/',
+                sameSite: 'lax',
+            })
     } catch (e) {
-        console.error(e);
+        console.error(e)
         return { message: 'Server error' }
     }
 
     redirect('/app/dashboard')
 }
 
-export async function getMe() {
+export async function getSession() {
     try {
         const sessionToken = (await cookies()).get('session')?.value
         if (!sessionToken) return null
@@ -103,692 +65,889 @@ export async function getMe() {
         const { payload } = await jwtVerify(sessionToken, SECRET_KEY)
         const user = await prisma.user.findUnique({
             where: { id: payload.userId as string },
-            select: { id: true, email: true, name: true, agency: true, phoneNumber: true, updatedAt: true }
+            select: {
+                id: true,
+                email: true,
+                name: true,
+                phoneNumber: true,
+                role: true,
+                agencyId: true,
+                agency: { select: { id: true, name: true, address: true } },
+                updatedAt: true
+            }
         })
         return user
-    } catch (e) {
+    } catch {
         return null
     }
 }
 
+// Legacy alias for components still using getMe
+export async function getMe() {
+    return getSession()
+}
+
 export async function logoutAgent() {
-    (await cookies()).delete('session')
+    ; (await cookies()).delete('session')
     redirect('/')
 }
 
-export async function getDashboardData() {
-    const user = await getMe();
-    if (!user) return null;
+export async function registerAgency(prevState: any, formData: FormData) {
+    const agencyName = (formData.get('agency') as string).trim()
+    const name = (formData.get('name') as string).trim()
+    const email = (formData.get('email') as string).toLowerCase().trim()
+    const pin = (formData.get('pin') as string).trim()
+    const phoneNumber = formData.get('phone') as string
+
+    if (!agencyName || !name || !email || !pin) return { message: 'Semua field wajib diisi' }
+    if (pin.length < 6) return { message: 'PIN minimal 6 karakter' }
 
     try {
-        const [activeCount, soldCount, clientCount] = await Promise.all([
-            prisma.property.count({ where: { agentId: user.id, status: 'AVAILABLE' } }),
-            prisma.property.count({ where: { agentId: user.id, status: 'SOLD' } }),
-            prisma.client.count({ where: { agentId: user.id } })
-        ]);
+        const existing = await prisma.user.findUnique({ where: { email } })
+        if (existing) return { message: 'Email sudah terdaftar' }
 
-        // Get 5 most recent activities (we can mock this or use a real logs table if exists)
-        // For now, let's get recent clients as activity
-        const recentClients = await prisma.client.findMany({
-            where: { agentId: user.id },
-            orderBy: { createdAt: 'desc' },
-            take: 5
-        });
+        const hashedPassword = await bcrypt.hash(pin, 10)
 
-        const activities = recentClients.map((c: Client) => ({
-            id: c.id,
-            text: `Klien baru terdaftar: ${c.name}`,
-            at: c.createdAt.toISOString()
-        }));
-
-        return {
-            stats: { activeCount, soldCount, clientCount },
-            activities
-        };
-    } catch (e) {
-        console.error(e);
-        return null;
-    }
-}
-
-export async function getClients() {
-    const user = await getMe();
-    if (!user) return [];
-
-    try {
-        const clients = await prisma.client.findMany({
-            where: { agentId: user.id },
-            orderBy: { createdAt: 'desc' }
-        });
-        return clients;
-    } catch (e) {
-        console.error(e);
-        return [];
-    }
-}
-
-export async function getClient(id: string) {
-    const user = await getMe();
-    if (!user) return null;
-
-    try {
-        const client = await prisma.client.findUnique({
-            where: { id, agentId: user.id },
-            include: {
-                interactionLogs: {
-                    orderBy: { createdAt: 'desc' }
-                },
-                interestedProperties: {
-                    include: { images: true }
+        await prisma.agency.create({
+            data: {
+                name: agencyName,
+                users: {
+                    create: {
+                        name,
+                        email,
+                        password: hashedPassword,
+                        phoneNumber,
+                        role: UserRole.ADMIN
+                    }
                 }
             }
-        });
-        return client;
+        })
     } catch (e) {
-        console.error(e);
-        return null;
+        console.error(e)
+        return { message: `Gagal mendaftar: ${(e as any)?.message || 'Unknown error'}` }
     }
+
+    redirect('/login')
 }
 
-
-export async function createClient(formData: FormData) {
-    const user = await getMe();
-    if (!user) return { success: false, message: 'Unauthorized' };
-
-    const name = formData.get('name') as string;
-    const whatsapp = formData.get('whatsapp') as string;
-    const prospect = formData.get('prospect') as string;
-
-    try {
-        const client = await prisma.client.create({
-            data: {
-                name,
-                whatsapp,
-                status: prospect,
-                agentId: user.id
-            }
-        });
-        revalidatePath('/app/clients');
-        revalidatePath('/app/dashboard');
-        return { success: true, clientId: client.id };
-    } catch (e) {
-        console.error(e);
-        return { success: false, message: 'Gagal membuat klien' };
-    }
-}
-
-export async function updateClient(id: string, formData: FormData) {
-    const user = await getMe();
-    if (!user) return { success: false, message: 'Unauthorized' };
-
-    const prospect = formData.get('prospect') as string;
-    const minBudget = formData.get('minBudget') ? parseFloat(formData.get('minBudget') as string) : null;
-    const maxBudget = formData.get('maxBudget') ? parseFloat(formData.get('maxBudget') as string) : null;
-    const notes = formData.get('notes') as string;
-
-    try {
-        const client = await prisma.client.update({
-            where: { id, agentId: user.id },
-            data: {
-                status: prospect,
-                minBudget,
-                maxBudget,
-                notes
-            }
-        });
-        revalidatePath(`/app/clients/${id}`);
-        revalidatePath('/app/clients');
-        return { success: true, client };
-    } catch (e) {
-        console.error(e);
-        return { success: false, message: 'Gagal update klien' };
-    }
-}
-
-export async function addInteractionLog(clientId: string, formData: FormData) {
-    const user = await getMe();
-    if (!user) return { success: false, message: 'Unauthorized' };
-
-    // Verify client ownership
-    const client = await prisma.client.findFirst({ where: { id: clientId, agentId: user.id } });
-    if (!client) return { success: false, message: 'Client not found' };
-
-    const content = formData.get('content') as string;
-
-    try {
-        await prisma.interactionLog.create({
-            data: {
-                content,
-                clientId: client.id
-            }
-        });
-        revalidatePath(`/app/clients/${clientId}`);
-        return { success: true };
-    } catch (e) {
-        return { success: false, message: 'Gagal menambah log' };
-    }
-}
-
-export async function deleteClient(id: string) {
-    const user = await getMe();
-    if (!user) return { success: false, message: 'Unauthorized' };
-
-    try {
-        await prisma.client.delete({
-            where: { id, agentId: user.id }
-        });
-        revalidatePath('/app/clients');
-        revalidatePath('/app/dashboard');
-        return { success: true };
-    } catch (e) {
-        return { success: false, message: 'Gagal menghapus klien' };
-    }
-}
-
-export async function addClientInterest(clientId: string, propertyId: string) {
-    const user = await getMe();
-    if (!user) return { success: false, message: 'Unauthorized' };
-
-    try {
-        // Verify ownership
-        const client = await prisma.client.findFirst({ where: { id: clientId, agentId: user.id } });
-        const prop = await prisma.property.findFirst({ where: { id: propertyId, agentId: user.id } });
-
-        if (!client || !prop) return { success: false, message: 'Data not found' };
-
-        await prisma.client.update({
-            where: { id: clientId },
-            data: {
-                interestedProperties: {
-                    connect: { id: propertyId }
-                }
-            }
-        });
-        revalidatePath(`/app/clients/${clientId}`);
-        return { success: true };
-    } catch (e) {
-        console.error(e);
-        return { success: false, message: 'Gagal menambahkan properti' };
-    }
-}
-
-export async function removeClientInterest(clientId: string, propertyId: string) {
-    const user = await getMe();
-    if (!user) return { success: false, message: 'Unauthorized' };
-
-    try {
-        await prisma.client.update({
-            where: { id: clientId, agentId: user.id },
-            data: {
-                interestedProperties: {
-                    disconnect: { id: propertyId }
-                }
-            }
-        });
-        revalidatePath(`/app/clients/${clientId}`);
-        return { success: true };
-    } catch (e) {
-        return { success: false, message: 'Gagal menghapus properti' };
-    }
-}
-
-export async function getClientRecommendedProperties(minBudget?: number | null, maxBudget?: number | null) {
-    const user = await getMe();
-    if (!user) return [];
-
-    try {
-        // Simple filter: if budget provided, find within range. 
-        // If no budget, return recent available properties.
-        const where: any = {
-            agentId: user.id,
-            status: 'AVAILABLE'
-        };
-
-        if (minBudget) {
-            where.price = { gte: minBudget };
-        }
-        if (maxBudget) {
-            where.price = { ...where.price, lte: maxBudget };
-        }
-
-        const props = await prisma.property.findMany({
-            where,
-            include: { images: true },
-            orderBy: { createdAt: 'desc' },
-            take: 6
-        });
-        return props;
-    } catch (e) {
-        return [];
-    }
-}
+// ─────────────────────────────────────────────
+// SETTINGS
+// ─────────────────────────────────────────────
 
 export async function getSettings() {
-    return await getMe();
+    return await getSession()
 }
 
 export async function updateSettings(prevState: any, formData: FormData) {
-    const user = await getMe();
-    if (!user) return { message: 'Unauthorized' };
+    const user = await getSession()
+    if (!user) return { message: 'Unauthorized' }
 
-    const name = formData.get('name') as string;
-    const agency = formData.get('agency') as string;
-    const phoneNumber = formData.get('phone') as string;
+    const name = formData.get('name') as string
+    const phoneNumber = formData.get('phone') as string
+    const agencyName = formData.get('agencyName') as string
 
     try {
         await prisma.user.update({
             where: { id: user.id },
-            data: { name, agency, phoneNumber }
-        });
-        revalidatePath('/app/settings');
-        return { message: 'Profil berhasil diperbarui' };
+            data: { name, phoneNumber }
+        })
+        if (agencyName && user.role === UserRole.ADMIN) {
+            await prisma.agency.update({
+                where: { id: user.agencyId },
+                data: { name: agencyName }
+            })
+        }
+        revalidatePath('/app/settings')
+        return { message: 'Profil berhasil diperbarui' }
     } catch (e) {
-        console.error(e);
-        return { message: 'Gagal memperbarui profil' };
+        console.error(e)
+        return { message: 'Gagal memperbarui profil' }
     }
 }
+
+export async function changePassword(prevState: any, formData: FormData) {
+    const user = await getSession()
+    if (!user) return { message: 'Unauthorized' }
+
+    const oldPin = formData.get('oldPin') as string
+    const newPin = formData.get('newPin') as string
+
+    try {
+        const dbUser = await prisma.user.findUnique({ where: { id: user.id } })
+        if (!dbUser) return { message: 'User tidak ditemukan' }
+
+        const isValid = await bcrypt.compare(oldPin, dbUser.password)
+        if (!isValid) return { message: 'PIN lama salah' }
+
+        const hashed = await bcrypt.hash(newPin, 10)
+        await prisma.user.update({ where: { id: user.id }, data: { password: hashed } })
+        return { message: 'PIN berhasil diubah' }
+    } catch {
+        return { message: 'Gagal mengubah PIN' }
+    }
+}
+
+// ─────────────────────────────────────────────
+// TEAM (Admin only)
+// ─────────────────────────────────────────────
+
+export async function getTeamMembers() {
+    const session = await getSession()
+    if (!session || session.role !== UserRole.ADMIN) return []
+
+    try {
+        const members = await prisma.user.findMany({
+            where: { agencyId: session.agencyId, role: UserRole.MARKETING },
+            include: {
+                _count: { select: { clients: true, deals: true } }
+            },
+            orderBy: { createdAt: 'desc' }
+        })
+        return members
+    } catch {
+        return []
+    }
+}
+
+export async function createMarketingUser(formData: FormData) {
+    const session = await getSession()
+    if (!session || session.role !== UserRole.ADMIN) return { success: false, message: 'Unauthorized' }
+
+    const name = (formData.get('name') as string).trim()
+    const email = (formData.get('email') as string).toLowerCase().trim()
+    const pin = (formData.get('pin') as string).trim()
+    const phoneNumber = formData.get('phone') as string
+
+    if (!name || !email || !pin) return { success: false, message: 'Semua field wajib diisi' }
+
+    try {
+        const existing = await prisma.user.findUnique({ where: { email } })
+        if (existing) return { success: false, message: 'Email sudah terdaftar' }
+
+        const hashedPassword = await bcrypt.hash(pin, 10)
+        await prisma.user.create({
+            data: {
+                name, email,
+                password: hashedPassword,
+                phoneNumber,
+                role: UserRole.MARKETING,
+                agencyId: session.agencyId
+            }
+        })
+        revalidatePath('/app/admin/team')
+        return { success: true }
+    } catch (e) {
+        return { success: false, message: 'Gagal membuat user' }
+    }
+}
+
+export async function deleteMarketingUser(id: string) {
+    const session = await getSession()
+    if (!session || session.role !== UserRole.ADMIN) return { success: false, message: 'Unauthorized' }
+
+    try {
+        await prisma.user.delete({ where: { id, agencyId: session.agencyId } })
+        revalidatePath('/app/admin/team')
+        return { success: true }
+    } catch {
+        return { success: false, message: 'Gagal menghapus user' }
+    }
+}
+
+// ─────────────────────────────────────────────
+// PROPERTIES
+// ─────────────────────────────────────────────
 
 export async function getProperties() {
-    const user = await getMe();
-    if (!user) return [];
+    const session = await getSession()
+    if (!session) return []
 
     try {
-        const props = await prisma.property.findMany({
-            where: { agentId: user.id },
-            include: { images: true },
+        return await prisma.property.findMany({
+            where: { agencyId: session.agencyId },
+            include: { images: true, _count: { select: { deals: true } } },
             orderBy: { createdAt: 'desc' }
-        });
-        return props;
-    } catch (e) {
-        console.error(e);
-        return [];
-    }
-}
-
-export async function createProperty(formData: FormData) {
-    const user = await getMe();
-    if (!user) return { success: false, message: 'Unauthorized' };
-
-    const title = formData.get('title') as string;
-    const price = parseFloat(formData.get('price') as string);
-    const location = formData.get('location') as string;
-    const description = formData.get('description') as string;
-    const landArea = parseFloat(formData.get('landArea') as string) || 0;
-    const buildingArea = parseFloat(formData.get('buildingArea') as string) || 0;
-    const yearBuilt = parseInt(formData.get('yearBuilt') as string) || 0;
-    const legality = formData.get('legality') as string;
-    const features = formData.get('features') as string;
-
-    // Simple image handling: assume base64 from client for now
-    const imagesRaw = formData.get('images') as string; // Will come as JSON string of array
-    const images = JSON.parse(imagesRaw || '[]');
-
-    try {
-        const prop = await prisma.property.create({
-            data: {
-                title,
-                price,
-                location,
-                description,
-                landArea,
-                buildingArea,
-                yearBuilt,
-                legality,
-                features,
-                agentId: user.id,
-                images: {
-                    create: images.map((url: string) => ({ url }))
-                }
-            }
-        });
-        revalidatePath('/app/listing');
-        revalidatePath('/app/dashboard');
-        return { success: true, propertyId: prop.id };
-    } catch (e) {
-        console.error(e);
-        return { success: false, message: 'Gagal membuat properti' };
-    }
-}
-
-export async function updateProperty(id: string, formData: FormData) {
-    const user = await getMe();
-    if (!user) return { success: false, message: 'Unauthorized' };
-
-    const title = formData.get('title') as string;
-    const price = parseFloat(formData.get('price') as string);
-    const location = formData.get('location') as string;
-    const description = formData.get('description') as string;
-    const landArea = parseFloat(formData.get('landArea') as string) || 0;
-    const buildingArea = parseFloat(formData.get('buildingArea') as string) || 0;
-    const yearBuilt = parseInt(formData.get('yearBuilt') as string) || 0;
-    const legality = formData.get('legality') as string;
-    const features = formData.get('features') as string;
-    const status = formData.get('status') as string;
-
-    try {
-        await prisma.property.update({
-            where: { id, agentId: user.id },
-            data: {
-                title,
-                price,
-                location,
-                description,
-                landArea,
-                buildingArea,
-                yearBuilt,
-                legality,
-                features,
-                status
-            }
-        });
-        revalidatePath(`/app/listing/${id}`);
-        revalidatePath('/app/listing');
-        return { success: true };
-    } catch (e) {
-        console.error(e);
-        return { success: false, message: 'Gagal memperbarui properti' };
-    }
-}
-
-export async function deleteProperty(id: string) {
-    const user = await getMe();
-    if (!user) return { success: false, message: 'Unauthorized' };
-
-    try {
-        await prisma.property.delete({
-            where: { id, agentId: user.id }
-        });
-        revalidatePath('/app/listing');
-        revalidatePath('/app/dashboard');
-        return { success: true };
-    } catch (e) {
-        console.error(e);
-        return { success: false, message: 'Gagal menghapus properti' };
+        })
+    } catch {
+        return []
     }
 }
 
 export async function getProperty(id: string) {
+    const session = await getSession()
+    if (!session) return null
+
     try {
-        const prop = await prisma.property.findUnique({
-            where: { id },
+        return await prisma.property.findFirst({
+            where: { id, agencyId: session.agencyId },
             include: {
                 images: true,
-                agent: {
-                    select: { name: true, agency: true, phoneNumber: true }
+                deals: {
+                    include: {
+                        client: true,
+                        marketing: { select: { name: true } },
+                        payments: { orderBy: { paidAt: 'asc' } }
+                    },
+                    orderBy: { createdAt: 'desc' }
                 }
             }
-        });
-        return prop;
-    } catch (e) {
-        return null;
+        })
+    } catch {
+        return null
     }
 }
 
-export async function registerAgent(prevState: any, formData: FormData) {
-    const name = formData.get('name') as string
-    const email = (formData.get('email') as string).toLowerCase().trim()
-    const pin = (formData.get('pin') as string).trim()
-    const agency = formData.get('agency') as string
-    const phoneNumber = formData.get('phone') as string
+export async function createProperty(formData: FormData) {
+    const session = await getSession()
+    if (!session) return { success: false, message: 'Unauthorized' }
 
-    if (!email || !pin || !name) return { message: 'Missing fields' }
+    const imagesRaw = formData.get('images') as string
+    const images = JSON.parse(imagesRaw || '[]')
 
-    console.log('Registering:', { email, name, agency });
     try {
-        const ex = await prisma.user.findUnique({ where: { email } })
-        console.log('Existing user:', ex);
-        if (ex) return { message: 'Email already registered' }
-
-        const hashedPassword = await bcrypt.hash(pin, 10)
-
-        // Generate OTP
-        const otp = generateOTP();
-        const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
-        const user = await prisma.user.create({
+        const prop = await prisma.property.create({
             data: {
-                name,
-                email,
-                password: hashedPassword,
-                agency,
-                phoneNumber,
-                verificationToken: otp,
-                verificationExpiry: expiry,
-                isEmailVerified: false
+                title: formData.get('title') as string,
+                price: parseFloat(formData.get('price') as string),
+                location: formData.get('location') as string,
+                description: formData.get('description') as string,
+                propertyType: (formData.get('propertyType') as any) || 'HOUSE',
+                landArea: parseFloat(formData.get('landArea') as string) || undefined,
+                buildingArea: parseFloat(formData.get('buildingArea') as string) || undefined,
+                yearBuilt: parseInt(formData.get('yearBuilt') as string) || undefined,
+                legality: formData.get('legality') as string || undefined,
+                certificate: formData.get('certificate') as string || undefined,
+                features: formData.get('features') as string || undefined,
+                agencyId: session.agencyId,
+                images: { create: images.map((url: string) => ({ url })) }
+            }
+        })
+        revalidatePath('/app/listing')
+        return { success: true, propertyId: prop.id }
+    } catch (e) {
+        console.error(e)
+        return { success: false, message: 'Gagal membuat properti' }
+    }
+}
+
+export async function updateProperty(id: string, formData: FormData) {
+    const session = await getSession()
+    if (!session) return { success: false, message: 'Unauthorized' }
+
+    try {
+        await prisma.property.update({
+            where: { id, agencyId: session.agencyId },
+            data: {
+                title: formData.get('title') as string,
+                price: parseFloat(formData.get('price') as string),
+                location: formData.get('location') as string,
+                description: formData.get('description') as string,
+                propertyType: (formData.get('propertyType') as any) || 'HOUSE',
+                status: (formData.get('status') as any) || 'AVAILABLE',
+                landArea: parseFloat(formData.get('landArea') as string) || undefined,
+                buildingArea: parseFloat(formData.get('buildingArea') as string) || undefined,
+                yearBuilt: parseInt(formData.get('yearBuilt') as string) || undefined,
+                legality: formData.get('legality') as string || undefined,
+                certificate: formData.get('certificate') as string || undefined,
+                features: formData.get('features') as string || undefined,
+            }
+        })
+        revalidatePath(`/app/listing/${id}`)
+        revalidatePath('/app/listing')
+        return { success: true }
+    } catch (e) {
+        return { success: false, message: 'Gagal update properti' }
+    }
+}
+
+export async function deleteProperty(id: string) {
+    const session = await getSession()
+    if (!session) return { success: false, message: 'Unauthorized' }
+
+    try {
+        await prisma.property.delete({ where: { id, agencyId: session.agencyId } })
+        revalidatePath('/app/listing')
+        return { success: true }
+    } catch {
+        return { success: false, message: 'Gagal menghapus properti' }
+    }
+}
+
+// ─────────────────────────────────────────────
+// CLIENTS
+// ─────────────────────────────────────────────
+
+export async function getClients(marketingId?: string) {
+    const session = await getSession()
+    if (!session) return []
+
+    try {
+        // Admin bisa lihat semua klien dalam agency; Marketing hanya milik sendiri
+        let where: any
+        if (session.role === UserRole.ADMIN) {
+            where = marketingId
+                ? { marketingId, marketing: { agencyId: session.agencyId } }
+                : { marketing: { agencyId: session.agencyId } }
+        } else {
+            where = { marketingId: session.id }
+        }
+
+        return await prisma.client.findMany({
+            where,
+            include: {
+                marketing: { select: { name: true } },
+                _count: { select: { followUps: true, deals: true } }
+            },
+            orderBy: { createdAt: 'desc' }
+        })
+    } catch {
+        return []
+    }
+}
+
+export async function getClient(id: string) {
+    const session = await getSession()
+    if (!session) return null
+
+    try {
+        const where = session.role === UserRole.ADMIN
+            ? { id, marketing: { agencyId: session.agencyId } }
+            : { id, marketingId: session.id }
+
+        return await prisma.client.findFirst({
+            where,
+            include: {
+                marketing: { select: { name: true, phoneNumber: true } },
+                followUps: { orderBy: { createdAt: 'desc' } },
+                deals: {
+                    include: {
+                        property: { select: { title: true, location: true } },
+                        payments: { orderBy: { paidAt: 'asc' } }
+                    },
+                    orderBy: { createdAt: 'desc' }
+                }
+            }
+        })
+    } catch {
+        return null
+    }
+}
+
+export async function createClient(formData: FormData) {
+    const session = await getSession()
+    if (!session) return { success: false, message: 'Unauthorized' }
+
+    try {
+        const client = await prisma.client.create({
+            data: {
+                name: formData.get('name') as string,
+                whatsapp: formData.get('whatsapp') as string,
+                email: formData.get('email') as string || undefined,
+                status: (formData.get('status') as any) || 'NEW',
+                notes: formData.get('notes') as string || undefined,
+                propertyType: formData.get('propertyType') as string || undefined,
+                locationPreference: formData.get('locationPreference') as string || undefined,
+                minBudget: formData.get('minBudget') ? parseFloat(formData.get('minBudget') as string) : undefined,
+                maxBudget: formData.get('maxBudget') ? parseFloat(formData.get('maxBudget') as string) : undefined,
+                marketingId: session.id
+            }
+        })
+        revalidatePath('/app/crm')
+        return { success: true, clientId: client.id }
+    } catch (e) {
+        return { success: false, message: 'Gagal membuat klien' }
+    }
+}
+
+export async function updateClient(id: string, formData: FormData) {
+    const session = await getSession()
+    if (!session) return { success: false, message: 'Unauthorized' }
+
+    try {
+        const where = session.role === UserRole.ADMIN
+            ? { id }
+            : { id, marketingId: session.id }
+
+        await prisma.client.update({
+            where,
+            data: {
+                name: formData.get('name') as string || undefined,
+                whatsapp: formData.get('whatsapp') as string || undefined,
+                email: formData.get('email') as string || undefined,
+                status: (formData.get('status') as any) || undefined,
+                notes: formData.get('notes') as string || undefined,
+                propertyType: formData.get('propertyType') as string || undefined,
+                locationPreference: formData.get('locationPreference') as string || undefined,
+                minBudget: formData.get('minBudget') ? parseFloat(formData.get('minBudget') as string) : undefined,
+                maxBudget: formData.get('maxBudget') ? parseFloat(formData.get('maxBudget') as string) : undefined,
+            }
+        })
+        revalidatePath(`/app/crm/${id}`)
+        return { success: true }
+    } catch {
+        return { success: false, message: 'Gagal update klien' }
+    }
+}
+
+export async function deleteClient(id: string) {
+    const session = await getSession()
+    if (!session) return { success: false, message: 'Unauthorized' }
+
+    try {
+        const where = session.role === UserRole.ADMIN
+            ? { id }
+            : { id, marketingId: session.id }
+        await prisma.client.delete({ where })
+        revalidatePath('/app/crm')
+        return { success: true }
+    } catch {
+        return { success: false, message: 'Gagal menghapus klien' }
+    }
+}
+
+// ─────────────────────────────────────────────
+// FOLLOW UPS
+// ─────────────────────────────────────────────
+
+export async function addFollowUp(clientId: string, formData: FormData) {
+    const session = await getSession()
+    if (!session) return { success: false, message: 'Unauthorized' }
+
+    try {
+        const followUpDateRaw = formData.get('followUpDate') as string
+        await prisma.followUp.create({
+            data: {
+                content: formData.get('content') as string,
+                type: (formData.get('type') as any) || 'WHATSAPP',
+                followUpDate: followUpDateRaw ? new Date(followUpDateRaw) : undefined,
+                clientId
+            }
+        })
+        revalidatePath(`/app/crm/${clientId}`)
+        return { success: true }
+    } catch {
+        return { success: false, message: 'Gagal menambah follow-up' }
+    }
+}
+
+export async function deleteFollowUp(id: string, clientId: string) {
+    const session = await getSession()
+    if (!session) return { success: false, message: 'Unauthorized' }
+
+    try {
+        await prisma.followUp.delete({ where: { id } })
+        revalidatePath(`/app/crm/${clientId}`)
+        return { success: true }
+    } catch {
+        return { success: false, message: 'Gagal menghapus follow-up' }
+    }
+}
+
+// ─────────────────────────────────────────────
+// DEALS
+// ─────────────────────────────────────────────
+
+export async function getDeals() {
+    const session = await getSession()
+    if (!session) return []
+
+    try {
+        const where = session.role === UserRole.ADMIN
+            ? { marketing: { agencyId: session.agencyId } }
+            : { marketingId: session.id }
+
+        return await prisma.deal.findMany({
+            where,
+            include: {
+                property: { select: { title: true, location: true } },
+                client: { select: { name: true, whatsapp: true } },
+                marketing: { select: { name: true } },
+                payments: true,
+                _count: { select: { payments: true } }
+            },
+            orderBy: { createdAt: 'desc' }
+        })
+    } catch {
+        return []
+    }
+}
+
+export async function getDeal(id: string) {
+    const session = await getSession()
+    if (!session) return null
+
+    try {
+        const where = session.role === UserRole.ADMIN
+            ? { id, marketing: { agencyId: session.agencyId } }
+            : { id, marketingId: session.id }
+
+        return await prisma.deal.findFirst({
+            where,
+            include: {
+                property: { select: { id: true, title: true, location: true, price: true } },
+                client: { select: { id: true, name: true, whatsapp: true } },
+                marketing: { select: { name: true } },
+                payments: { orderBy: { paidAt: 'asc' } }
+            }
+        })
+    } catch {
+        return null
+    }
+}
+
+export async function createDeal(formData: FormData) {
+    const session = await getSession()
+    if (!session) return { success: false, message: 'Unauthorized' }
+
+    const dealPrice = parseFloat(formData.get('dealPrice') as string)
+    const totalInstallments = parseInt(formData.get('totalInstallments') as string) || 1
+    const paymentStartRaw = formData.get('paymentStartDate') as string
+    const rentStartRaw = formData.get('rentStartDate') as string
+    const rentEndRaw = formData.get('rentEndDate') as string
+
+    try {
+        const deal = await prisma.deal.create({
+            data: {
+                dealType: (formData.get('dealType') as any) || 'SALE',
+                dealPrice,
+                totalInstallments,
+                paymentStartDate: paymentStartRaw ? new Date(paymentStartRaw) : undefined,
+                notes: formData.get('notes') as string || undefined,
+                rentStartDate: rentStartRaw ? new Date(rentStartRaw) : undefined,
+                rentEndDate: rentEndRaw ? new Date(rentEndRaw) : undefined,
+                propertyId: formData.get('propertyId') as string,
+                clientId: formData.get('clientId') as string,
+                marketingId: session.id
+            }
+        })
+        // Update property status
+        const dealType = formData.get('dealType') as string
+        await prisma.property.update({
+            where: { id: formData.get('propertyId') as string },
+            data: { status: dealType === 'SALE' ? 'SOLD' : 'RENTED' }
+        })
+        revalidatePath('/app/deals')
+        revalidatePath('/app/listing')
+        return { success: true, dealId: deal.id }
+    } catch (e) {
+        console.error(e)
+        return { success: false, message: 'Gagal membuat deal' }
+    }
+}
+
+export async function updateDealStatus(id: string, status: string) {
+    const session = await getSession()
+    if (!session) return { success: false, message: 'Unauthorized' }
+
+    try {
+        await prisma.deal.update({
+            where: { id },
+            data: { status: status as any }
+        })
+        revalidatePath('/app/deals')
+        return { success: true }
+    } catch {
+        return { success: false, message: 'Gagal update status deal' }
+    }
+}
+
+export async function deleteDeal(id: string) {
+    const session = await getSession()
+    if (!session || session.role !== UserRole.ADMIN) return { success: false, message: 'Unauthorized' }
+
+    try {
+        await prisma.deal.delete({ where: { id } })
+        revalidatePath('/app/deals')
+        return { success: true }
+    } catch {
+        return { success: false, message: 'Gagal menghapus deal' }
+    }
+}
+
+// ─────────────────────────────────────────────
+// PAYMENTS
+// ─────────────────────────────────────────────
+
+export async function addPayment(formData: FormData) {
+    const session = await getSession()
+    if (!session) return { success: false, message: 'Unauthorized' }
+
+    const dealId = formData.get('dealId') as string
+    const paidAtRaw = formData.get('paidAt') as string
+
+    try {
+        await prisma.payment.create({
+            data: {
+                amount: parseFloat(formData.get('amount') as string),
+                paymentType: (formData.get('paymentType') as any) || 'FULL_PAYMENT',
+                paymentMethod: (formData.get('paymentMethod') as any) || 'TRANSFER',
+                installmentNumber: formData.get('installmentNumber') ? parseInt(formData.get('installmentNumber') as string) : undefined,
+                paidAt: paidAtRaw ? new Date(paidAtRaw) : new Date(),
+                notes: formData.get('notes') as string || undefined,
+                dealId
             }
         })
 
-        // Send OTP email
-        const emailRes = await sendVerificationEmail(user.email, otp, user.name);
-        if (!emailRes.success) {
-            console.error('Register: Failed to send OTP:', emailRes.error);
+        // Kalkulasi ulang status pembayaran Deal
+        const dealInfo = await prisma.deal.findUnique({
+            where: { id: dealId },
+            include: { payments: true }
+        })
+        if (dealInfo) {
+            const totalPaid = dealInfo.payments.reduce((s: number, p: any) => s + p.amount, 0)
+            let newStatus = 'PENDING'
+            if (totalPaid >= dealInfo.dealPrice) {
+                newStatus = 'COMPLETED'
+            } else if (totalPaid > 0) {
+                newStatus = 'IN_PROGRESS'
+            }
+            if (dealInfo.paymentStatus !== newStatus) {
+                await prisma.deal.update({
+                    where: { id: dealId },
+                    data: { paymentStatus: newStatus as any }
+                })
+            }
         }
 
-        // Store userId in cookie for verification page
-        (await cookies()).set('pendingVerification', user.id, {
-            httpOnly: true,
-            maxAge: 60 * 15, // 15 minutes
-            path: '/',
-        });
-
-    } catch (e) {
-        console.error('Registration Error:', e);
-        return { message: `Failed to create account: ${(e as any)?.message || 'Unknown error'}` }
+        revalidatePath('/app/deals')
+        return { success: true }
+    } catch {
+        return { success: false, message: 'Gagal menambah pembayaran' }
     }
-
-    redirect('/verify-email')
 }
 
-export async function getReportStats() {
-    const user = await getMe();
-    if (!user) return null;
+export async function deletePayment(id: string, dealId: string) {
+    const session = await getSession()
+    if (!session) return { success: false, message: 'Unauthorized' }
 
     try {
-        const [
-            propsTotal,
-            propsAvailable,
-            propsSold,
-            clientsTotal,
-            clientsCold,
-            clientsWarm,
-            clientsHot,
-            recentReports
-        ] = await Promise.all([
-            prisma.property.count({ where: { agentId: user.id } }),
-            prisma.property.count({ where: { agentId: user.id, status: 'AVAILABLE' } }),
-            prisma.property.count({ where: { agentId: user.id, status: 'SOLD' } }),
-            prisma.client.count({ where: { agentId: user.id } }),
-            prisma.client.count({ where: { agentId: user.id, status: 'Cold' } }),
-            prisma.client.count({ where: { agentId: user.id, status: 'Warm' } }),
-            prisma.client.count({ where: { agentId: user.id, status: 'Hot' } }),
-            prisma.report.findMany({
-                where: { agentId: user.id },
-                orderBy: { createdAt: 'desc' },
-                take: 10
-            })
-        ]);
+        await prisma.payment.delete({ where: { id } })
+        revalidatePath('/app/deals')
+        return { success: true }
+    } catch {
+        return { success: false, message: 'Gagal menghapus pembayaran' }
+    }
+}
 
-        // Also get list of active properties for table view
-        const activeProperties = await prisma.property.findMany({
-            where: { agentId: user.id, status: 'AVAILABLE' },
-            orderBy: { createdAt: 'desc' }
-        });
+// ─────────────────────────────────────────────
+// EXPENSES (Admin only)
+// ─────────────────────────────────────────────
+
+export async function getExpenses() {
+    const session = await getSession()
+    if (!session || session.role !== UserRole.ADMIN) return []
+
+    try {
+        return await prisma.agencyExpense.findMany({
+            where: { agencyId: session.agencyId },
+            orderBy: { expenseDate: 'desc' }
+        })
+    } catch {
+        return []
+    }
+}
+
+export async function createExpense(formData: FormData) {
+    const session = await getSession()
+    if (!session || session.role !== UserRole.ADMIN) return { success: false, message: 'Unauthorized' }
+
+    try {
+        await prisma.agencyExpense.create({
+            data: {
+                amount: parseFloat(formData.get('amount') as string),
+                description: formData.get('description') as string,
+                category: (formData.get('category') as any) || 'OPERATIONAL',
+                expenseDate: new Date(formData.get('expenseDate') as string),
+                agencyId: session.agencyId
+            }
+        })
+        revalidatePath('/app/admin/finance')
+        return { success: true }
+    } catch {
+        return { success: false, message: 'Gagal menambah pengeluaran' }
+    }
+}
+
+export async function deleteExpense(id: string) {
+    const session = await getSession()
+    if (!session || session.role !== UserRole.ADMIN) return { success: false, message: 'Unauthorized' }
+
+    try {
+        await prisma.agencyExpense.delete({ where: { id, agencyId: session.agencyId } })
+        revalidatePath('/app/admin/finance')
+        return { success: true }
+    } catch {
+        return { success: false, message: 'Gagal menghapus pengeluaran' }
+    }
+}
+
+// ─────────────────────────────────────────────
+// DASHBOARD
+// ─────────────────────────────────────────────
+
+export async function getDashboardData() {
+    const session = await getSession()
+    if (!session) return null
+
+    try {
+        if (session.role === UserRole.ADMIN) {
+            // Admin dashboard: full agency view
+            const [
+                totalProperties, availableProperties, soldProperties, rentedProperties,
+                totalClients, totalDeals, completedDeals,
+                allDeals, expenses, recentDeals
+            ] = await Promise.all([
+                prisma.property.count({ where: { agencyId: session.agencyId } }),
+                prisma.property.count({ where: { agencyId: session.agencyId, status: 'AVAILABLE' } }),
+                prisma.property.count({ where: { agencyId: session.agencyId, status: 'SOLD' } }),
+                prisma.property.count({ where: { agencyId: session.agencyId, status: 'RENTED' } }),
+                prisma.client.count({ where: { marketing: { agencyId: session.agencyId } } }),
+                prisma.deal.count({ where: { marketing: { agencyId: session.agencyId } } }),
+                prisma.deal.count({ where: { marketing: { agencyId: session.agencyId }, status: 'COMPLETED' } }),
+                prisma.deal.findMany({
+                    where: { marketing: { agencyId: session.agencyId } },
+                    include: { marketing: { select: { name: true, id: true } }, payments: true }
+                }),
+                prisma.agencyExpense.findMany({ where: { agencyId: session.agencyId } }),
+                prisma.deal.findMany({
+                    where: { marketing: { agencyId: session.agencyId } },
+                    include: {
+                        property: { select: { title: true } },
+                        client: { select: { name: true } },
+                        marketing: { select: { name: true } },
+                        payments: true
+                    },
+                    orderBy: { createdAt: 'desc' },
+                    take: 5
+                })
+            ])
+
+            const totalPaid = allDeals.reduce((sum: number, d: any) => sum + d.payments.reduce((s: number, p: any) => s + p.amount, 0), 0)
+            const totalExpenses = expenses.reduce((sum: number, e: any) => sum + e.amount, 0)
+            const netProfit = totalPaid - totalExpenses // asumsi profit = semua uang masuk dikurang pengeluaran
+
+            // Leaderboard
+            const leaderboard: Record<string, { name: string; deals: number; revenue: number }> = {}
+            for (const d of allDeals) {
+                const mid = d.marketing.id
+                if (!leaderboard[mid]) leaderboard[mid] = { name: d.marketing.name, deals: 0, revenue: 0 }
+                if (d.status === 'COMPLETED') {
+                    leaderboard[mid].deals++
+                }
+                leaderboard[mid].revenue += d.payments.reduce((s: number, p: any) => s + p.amount, 0)
+            }
+            const leaderboardArr = Object.values(leaderboard).sort((a: any, b: any) => b.revenue - a.revenue)
+
+            return {
+                role: 'ADMIN',
+                stats: { totalProperties, availableProperties, soldProperties, rentedProperties, totalClients, totalDeals, completedDeals },
+                finance: { totalPaid, totalExpenses, netProfit },
+                leaderboard: leaderboardArr,
+                recentDeals
+            }
+        } else {
+            // Marketing dashboard
+            const [
+                myClients, hotClients, dealClients,
+                myDeals, completedDeals,
+                upcomingFollowUps
+            ] = await Promise.all([
+                prisma.client.count({ where: { marketingId: session.id } }),
+                prisma.client.count({ where: { marketingId: session.id, status: 'HOT' } }),
+                prisma.client.count({ where: { marketingId: session.id, status: 'DEAL' } }),
+                prisma.deal.count({ where: { marketingId: session.id } }),
+                prisma.deal.count({ where: { marketingId: session.id, status: 'COMPLETED' } }),
+                prisma.followUp.findMany({
+                    where: {
+                        client: { marketingId: session.id },
+                        followUpDate: { gte: new Date() }
+                    },
+                    include: { client: { select: { name: true, id: true } } },
+                    orderBy: { followUpDate: 'asc' },
+                    take: 5
+                })
+            ])
+
+            const myDealsFull = await prisma.deal.findMany({
+                where: { marketingId: session.id },
+                include: { payments: true }
+            })
+            const totalPaid = myDealsFull.reduce((sum: number, d: any) => sum + d.payments.reduce((s: number, p: any) => s + p.amount, 0), 0)
+
+            return {
+                role: 'MARKETING',
+                stats: { myClients, hotClients, dealClients, myDeals, completedDeals },
+                finance: { totalPaid },
+                upcomingFollowUps
+            }
+        }
+    } catch (e) {
+        console.error(e)
+        return null
+    }
+}
+
+export async function getAdminReports() {
+    const session = await getSession()
+    if (!session || session.role !== UserRole.ADMIN) return null
+
+    try {
+        const [deals, expenses, marketingUsers] = await Promise.all([
+            prisma.deal.findMany({
+                where: { marketing: { agencyId: session.agencyId } },
+                include: {
+                    property: { select: { title: true, location: true } },
+                    client: { select: { name: true } },
+                    marketing: { select: { name: true, id: true } },
+                    payments: true
+                },
+                orderBy: { createdAt: 'desc' }
+            }),
+            prisma.agencyExpense.findMany({
+                where: { agencyId: session.agencyId },
+                orderBy: { expenseDate: 'desc' }
+            }),
+            prisma.user.findMany({
+                where: { agencyId: session.agencyId, role: UserRole.MARKETING },
+                include: {
+                    _count: { select: { clients: true, deals: true } }
+                }
+            })
+        ])
+
+        // Per-marketing stats
+        const mktStats: Record<string, any> = {}
+        for (const u of marketingUsers) {
+            mktStats[u.id] = { name: u.name, clients: u._count.clients, deals: 0, revenue: 0 }
+        }
+        for (const d of deals) {
+            if (!mktStats[d.marketing.id]) mktStats[d.marketing.id] = { name: d.marketing.name, clients: 0, deals: 0, revenue: 0 }
+            if (d.status === 'COMPLETED') {
+                mktStats[d.marketing.id].deals++
+            }
+            mktStats[d.marketing.id].revenue += d.payments.reduce((s: number, p: any) => s + p.amount, 0)
+        }
+
+        const totalPaid = deals.reduce((sum: number, d: any) => sum + d.payments.reduce((s: number, p: any) => s + p.amount, 0), 0)
+        const totalExpenses = expenses.reduce((s: number, e: any) => s + e.amount, 0)
 
         return {
-            props: { total: propsTotal, available: propsAvailable, sold: propsSold, list: activeProperties },
-            clients: { total: clientsTotal, cold: clientsCold, warm: clientsWarm, hot: clientsHot },
-            reports: recentReports
-        };
+            deals,
+            expenses,
+            marketingStats: Object.values(mktStats),
+            summary: { totalPaid, totalExpenses, netProfit: totalPaid - totalExpenses }
+        }
     } catch (e) {
-        console.error(e);
-        return null;
+        console.error(e)
+        return null
     }
 }
 
-export async function createReport(formData: FormData) {
-    const user = await getMe();
-    if (!user) return { success: false, message: 'Unauthorized' };
-
-    const title = formData.get('title') as string;
-    const content = formData.get('content') as string;
-    const category = formData.get('category') as string;
-
-    try {
-        await prisma.report.create({
-            data: {
-                title,
-                content,
-                category,
-                agentId: user.id
-            }
-        });
-        revalidatePath('/app/reports');
-        return { success: true };
-    } catch (e) {
-        console.error(e);
-        return { success: false, message: 'Gagal membuat laporan' };
-    }
-}
-
-
-export async function deleteReport(id: string) {
-    const user = await getMe();
-    if (!user) return { success: false, message: 'Unauthorized' };
-
-    try {
-        await prisma.report.delete({
-            where: { id, agentId: user.id }
-        });
-        revalidatePath('/app/reports');
-        return { success: true };
-    } catch (e) {
-        return { success: false, message: 'Gagal menghapus laporan' };
-    }
-}
-
-// Email Verification Actions
-export async function verifyOTP(prevState: any, formData: FormData) {
-    const otp = (formData.get('otp') as string).trim();
-
-    if (!otp || otp.length !== 6) {
-        return { message: 'Kode OTP harus 6 digit' };
-    }
-
-    try {
-        const userId = (await cookies()).get('pendingVerification')?.value;
-        if (!userId) {
-            return { message: 'Sesi verifikasi tidak valid. Silakan login kembali.' };
-        }
-
-        const user = await prisma.user.findUnique({
-            where: { id: userId }
-        });
-
-        if (!user) {
-            return { message: 'User tidak ditemukan' };
-        }
-
-        if (!user.verificationToken || !user.verificationExpiry) {
-            return { message: 'Kode OTP tidak ditemukan. Silakan minta kode baru.' };
-        }
-
-        // Check if OTP expired
-        if (new Date() > user.verificationExpiry) {
-            return { message: 'Kode OTP sudah kadaluarsa. Silakan minta kode baru.' };
-        }
-
-        // Verify OTP
-        if (user.verificationToken !== otp) {
-            return { message: 'Kode OTP salah. Silakan coba lagi.' };
-        }
-
-        // Mark email as verified
-        await prisma.user.update({
-            where: { id: user.id },
-            data: {
-                isEmailVerified: true,
-                verificationToken: null,
-                verificationExpiry: null
-            }
-        });
-
-        // Create session (auto-login)
-        const token = await new SignJWT({ userId: user.id, email: user.email })
-            .setProtectedHeader({ alg: 'HS256' })
-            .setIssuedAt()
-            .setExpirationTime('365d')
-            .sign(SECRET_KEY);
-
-        (await cookies()).set('session', token, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            maxAge: 60 * 60 * 24 * 365, // 1 year
-            expires: new Date(Date.now() + 60 * 60 * 24 * 365 * 1000),
-            path: '/',
-            sameSite: 'lax',
-        });
-
-        // Clear pending verification cookie
-        (await cookies()).delete('pendingVerification');
-
-    } catch (e) {
-        console.error(e);
-        return { message: 'Terjadi kesalahan. Silakan coba lagi.' };
-    }
-
-    redirect('/app/dashboard');
-}
-
-export async function resendOTP() {
-    try {
-        const userId = (await cookies()).get('pendingVerification')?.value;
-        if (!userId) {
-            return { success: false, message: 'Sesi verifikasi tidak valid.' };
-        }
-
-        const user = await prisma.user.findUnique({
-            where: { id: userId }
-        });
-
-        if (!user) {
-            return { success: false, message: 'User tidak ditemukan' };
-        }
-
-        // Generate new OTP
-        const otp = generateOTP();
-        const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
-        await prisma.user.update({
-            where: { id: user.id },
-            data: {
-                verificationToken: otp,
-                verificationExpiry: expiry
-            }
-        });
-
-        // Send new OTP
-        await sendVerificationEmail(user.email, otp, user.name);
-
-        return { success: true, message: 'Kode OTP baru telah dikirim ke email Anda.' };
-    } catch (e) {
-        console.error(e);
-        return { success: false, message: 'Gagal mengirim kode OTP. Silakan coba lagi.' };
-    }
-}
-
-export async function getPendingVerificationUser() {
-    try {
-        const userId = (await cookies()).get('pendingVerification')?.value;
-        if (!userId) return null;
-
-        const user = await prisma.user.findUnique({
-            where: { id: userId },
-            select: { email: true, name: true }
-        });
-
-        return user;
-    } catch (e) {
-        return null;
-    }
-}
-
+// ─────────────────────────────────────────────
+// unused legacy stubs (keep to avoid import errors during migration)
+// ─────────────────────────────────────────────
+export async function getReportStats() { return null }
+export async function createReport() { return { success: false } }
+export async function deleteReport() { return { success: false } }
+export async function loginAgent(p: any, f: FormData) { return loginUser(p, f) }
+export async function registerAgent(p: any, f: FormData) { return registerAgency(p, f) }

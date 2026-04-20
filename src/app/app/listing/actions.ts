@@ -1,7 +1,6 @@
 'use server'
 
 import { prisma } from '@/lib/db'
-import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { cookies } from 'next/headers'
 import { jwtVerify } from 'jose'
@@ -13,7 +12,7 @@ async function getSession() {
     if (!token) return null
     try {
         const { payload } = await jwtVerify(token, SECRET_KEY)
-        return payload as { userId: string, email: string }
+        return payload as { userId: string; email: string; agencyId: string; role: string }
     } catch {
         return null
     }
@@ -28,17 +27,18 @@ export async function addProperty(prevState: any, formData: FormData) {
         const priceStr = (formData.get('price') as string || '').replace(/[^0-9.]/g, '')
         const price = parseFloat(priceStr)
         const location = (formData.get('location') as string || '').trim()
-        const description = (formData.get('description') as string || '').trim()
-        const landArea = parseFloat(formData.get('landArea') as string || '0') || 0
-        const buildingArea = parseFloat(formData.get('buildingArea') as string || '0') || 0
-        const yearBuilt = parseInt(formData.get('yearBuilt') as string || '0') || 0
-        const legality = (formData.get('legality') as string || '').trim()
-        const features = (formData.get('features') as string || '').trim()
-        const status = (formData.get('status') as string || 'AVAILABLE')
+        const description = (formData.get('description') as string || '').trim() || '-'
+        const landArea = parseFloat(formData.get('landArea') as string) || undefined
+        const buildingArea = parseFloat(formData.get('buildingArea') as string) || undefined
+        const yearBuilt = parseInt(formData.get('yearBuilt') as string) || undefined
+        const legality = (formData.get('legality') as string || '').trim() || undefined
+        const features = (formData.get('features') as string || '').trim() || undefined
+        const status = (formData.get('status') as any) || 'AVAILABLE'
+        const propertyType = (formData.get('propertyType') as any) || 'HOUSE'
 
         // Images handling
         const imagesRaw = formData.get('images') as string
-        const images = JSON.parse(imagesRaw || '[]')
+        const images: string[] = JSON.parse(imagesRaw || '[]')
 
         if (!title || isNaN(price) || !location) {
             return { message: 'Nama, Harga, dan Lokasi wajib diisi.' }
@@ -56,7 +56,8 @@ export async function addProperty(prevState: any, formData: FormData) {
                 legality,
                 features,
                 status,
-                agentId: session.userId,
+                propertyType,
+                agencyId: session.agencyId,   // ← skema baru: per-agency
                 images: {
                     create: images.map((url: string) => ({ url }))
                 }
@@ -64,7 +65,7 @@ export async function addProperty(prevState: any, formData: FormData) {
         })
     } catch (e) {
         console.error('Error creating property:', e)
-        return { message: 'Terjadi kesalahan sistem saat menyimpan properti.' }
+        return { message: `Gagal menyimpan properti: ${(e as any)?.message || 'Unknown error'}` }
     }
 
     revalidatePath('/app/listing')

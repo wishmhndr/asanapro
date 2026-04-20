@@ -45,7 +45,28 @@ export default function AddPropertyModal() {
         Array.from(files).forEach(file => {
             const reader = new FileReader();
             reader.onloadend = () => {
-                setImages(prev => [...prev, reader.result as string]);
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+                    const maxDim = 800; // Resize to max 800px
+
+                    if (width > height && width > maxDim) {
+                        height *= maxDim / width;
+                        width = maxDim;
+                    } else if (height > maxDim) {
+                        width *= maxDim / height;
+                        height = maxDim;
+                    }
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx?.drawImage(img, 0, 0, width, height);
+                    const dataUrl = canvas.toDataURL('image/jpeg', 0.7); // Compress JPEG 70%
+                    setImages(prev => [...prev, dataUrl]);
+                };
+                img.src = reader.result as string;
             };
             reader.readAsDataURL(file);
         });
@@ -106,11 +127,23 @@ export default function AddPropertyModal() {
                             </div>
 
                             <div className="col-md-6">
+                                <label className="form-label small fw-bold text-secondary">Tipe Properti</label>
+                                <select name="propertyType" className="form-select form-select-lg rounded-4 border-2">
+                                    <option value="HOUSE">Rumah (House)</option>
+                                    <option value="APARTMENT">Apartemen</option>
+                                    <option value="LAND">Tanah (Land)</option>
+                                    <option value="COMMERCIAL">Komersial / Ruko</option>
+                                    <option value="VILLA">Villa</option>
+                                </select>
+                            </div>
+
+                            <div className="col-md-6">
                                 <label className="form-label small fw-bold text-secondary">Legalitas</label>
                                 <select name="legality" className="form-select form-select-lg rounded-4 border-2">
                                     <option value="SHM">SHM (Sertifikat Hak Milik)</option>
                                     <option value="HGB">HGB (Hak Guna Bangunan)</option>
                                     <option value="Lainnya">Lainnya / Surat Ijo / Girik</option>
+                                    <option value="">(Tidak Tahu/Belum Ada)</option>
                                 </select>
                             </div>
 

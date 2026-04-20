@@ -9,101 +9,232 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
+model Agency {
   id        String   @id @default(uuid())
-  email     String   @unique
-  password  String   // Hashed password
   name      String
-  agency    String?
-  phoneNumber String?
-  
-  // Email Verification
-  isEmailVerified      Boolean   @default(false)
-  verificationToken    String?
-  verificationExpiry   DateTime?
-  
+  address   String?
+  logoUrl   String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
+
+  users      User[]
   properties Property[]
-  clients    Client[]
-  reports    Report[]
+  expenses   AgencyExpense[]
+}
+
+model User {
+  id          String   @id @default(uuid())
+  email       String   @unique
+  password    String
+  name        String
+  phoneNumber String?
+  role        UserRole @default(MARKETING)
+
+  agencyId String
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  // Relations
+  clients Client[]   // Marketing: klien milik sendiri
+  deals   Deal[]     // Deal yang ditutup oleh Marketing ini
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum UserRole {
+  ADMIN
+  MARKETING
 }
 
 model Property {
-  id          String   @id @default(uuid())
-  title       String
-  description String
-  price       Float
-  location    String
-  status      String   @default("AVAILABLE") // AVAILABLE, SOLD, RENTED
-  
+  id           String       @id @default(uuid())
+  title        String
+  description  String
+  price        Float
+  location     String
+  propertyType PropertyType @default(HOUSE)
+  status       PropertyStatus @default(AVAILABLE)
+
   landArea     Float?
   buildingArea Float?
   yearBuilt    Int?
-  features     String? // Spesifikasi / Fasilitas
-  legality     String? // SHM, HGB, etc
-  
-  // Relations
-  agentId     String
-  agent       User     @relation(fields: [agentId], references: [id])
-  
-  images      PropertyImage[]
-  
-  interestedClients Client[]
+  features     String?
+  legality     String?
+  certificate  String?
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  agencyId String
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  images PropertyImage[]
+  deals  Deal[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum PropertyType {
+  HOUSE
+  APARTMENT
+  LAND
+  COMMERCIAL
+  VILLA
+}
+
+enum PropertyStatus {
+  AVAILABLE
+  UNDER_NEGOTIATION
+  SOLD
+  RENTED
 }
 
 model PropertyImage {
   id         String   @id @default(uuid())
   url        String
-  
   propertyId String
   property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 }
 
 model Client {
-  id        String   @id @default(uuid())
-  name      String
-  email     String?
-  whatsapp  String
-  status    String   @default("NEW") // NEW, PROSPECT, DEAL, LOST
-  notes     String?
+  id                 String       @id @default(uuid())
+  name               String
+  email              String?
+  whatsapp           String
+  status             ClientStatus @default(NEW)
+  notes              String?
+  minBudget          Float?
+  maxBudget          Float?
+  propertyType       String?
+  locationPreference String?
 
-  minBudget Float?
-  maxBudget Float?
+  marketingId String
+  marketing   User   @relation(fields: [marketingId], references: [id], onDelete: Cascade)
 
-  agentId   String
-  agent     User     @relation(fields: [agentId], references: [id])
-  
-  interactionLogs InteractionLog[]
-  interestedProperties Property[]
-
+  followUps FollowUp[]
+  deals     Deal[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
-model InteractionLog {
-  id        String   @id @default(uuid())
-  content   String
-  
-  clientId  String
-  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  
+enum ClientStatus {
+  NEW
+  PROSPECT
+  HOT
+  DEAL
+  LOST
+}
+
+model FollowUp {
+  id             String      @id @default(uuid())
+  content        String
+  type           FollowUpType @default(WHATSAPP)
+  followUpDate   DateTime?
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
   createdAt DateTime @default(now())
 }
 
-model Report {
-  id        String   @id @default(uuid())
-  title     String?
-  content   String
-  category  String   @default("GENERAL") // GENERAL, ACTIVITY, INCIDENT
-  
-  agentId   String
-  agent     User     @relation(fields: [agentId], references: [id])
-  
+enum FollowUpType {
+  CALL
+  WHATSAPP
+  VISIT
+  MEETING
+  EMAIL
+}
+
+model Deal {
+  id               String     @id @default(uuid())
+  dealType         DealType
+  dealPrice        Float
+  status           DealStatus @default(IN_PROGRESS)
+  paymentStatus    DealPaymentStatus @default(PENDING)
+  totalInstallments Int       @default(1)
+  paymentStartDate DateTime?
+  notes            String?
+
+  // Khusus sewa
+  rentStartDate DateTime?
+  rentEndDate   DateTime?
+
+  propertyId  String
+  property    Property @relation(fields: [propertyId], references: [id])
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id])
+
+  marketingId String
+  marketing   User   @relation(fields: [marketingId], references: [id])
+
+  payments Payment[]
+
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum DealType {
+  SALE
+  RENT
+}
+
+enum DealStatus {
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum DealPaymentStatus {
+  PENDING
+  IN_PROGRESS
+  OVERDUE
+  COMPLETED
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  amount            Float
+  paymentType       PaymentType
+  paymentMethod     PaymentMethod @default(TRANSFER)
+  installmentNumber Int?
+  paidAt            DateTime
+  notes             String?
+
+  dealId String
+  deal   Deal   @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}
+
+enum PaymentType {
+  DOWN_PAYMENT
+  INSTALLMENT
+  FULL_PAYMENT
+}
+
+enum PaymentMethod {
+  CASH
+  TRANSFER
+  KPR
+  KPA
+}
+
+model AgencyExpense {
+  id          String          @id @default(uuid())
+  amount      Float
+  description String
+  category    ExpenseCategory @default(OPERATIONAL)
+  expenseDate DateTime
+
+  agencyId String
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}
+
+enum ExpenseCategory {
+  OPERATIONAL
+  MARKETING_FEE
+  SALARY
+  OTHER
 }
