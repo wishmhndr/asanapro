@@ -647,6 +647,65 @@ export async function createDeal(formData: FormData) {
     }
 }
 
+export async function updateDeal(id: string, formData: FormData) {
+    const session = await getSession();
+    if (!session) return { success: false, message: 'Unauthorized' };
+    
+    const dealPriceRaw = formData.get('dealPrice') as string;
+    const dealPrice = parseFloat(dealPriceRaw);
+    const totalInstallments = parseInt(formData.get('totalInstallments') as string) || undefined;
+    const paymentStartRaw = formData.get('paymentStartDate') as string;
+    const rentStartRaw = formData.get('rentStartDate') as string;
+    const rentEndRaw = formData.get('rentEndDate') as string;
+
+    try {
+        await prisma.deal.update({
+            where: { id },
+            data: {
+                dealType: (formData.get('dealType') as any) || undefined,
+                dealPrice: isNaN(dealPrice) ? undefined : dealPrice,
+                totalInstallments,
+                paymentStartDate: paymentStartRaw ? new Date(paymentStartRaw) : undefined,
+                notes: formData.get('notes') as string || undefined,
+                rentStartDate: rentStartRaw ? new Date(rentStartRaw) : undefined,
+                rentEndDate: rentEndRaw ? new Date(rentEndRaw) : undefined,
+            }
+        });
+        
+        const dealType = formData.get('dealType') as string;
+        if(dealType) {
+            const deal = await prisma.deal.findUnique({where: {id}, select: {propertyId: true}});
+            if(deal) {
+                await prisma.property.update({
+                    where: { id: deal.propertyId },
+                    data: { status: dealType === 'SALE' ? 'SOLD' : 'RENTED' }
+                });
+            }
+        }
+        
+        const dealInfo = await prisma.deal.findUnique({
+            where: { id },
+            include: { payments: true }
+        });
+        if (dealInfo) {
+            const totalPaid = dealInfo.payments.reduce((s: number, p: any) => s + p.amount, 0);
+            let newStatus = 'PENDING';
+            if (totalPaid >= dealInfo.dealPrice) newStatus = 'COMPLETED';
+            else if (totalPaid > 0) newStatus = 'IN_PROGRESS';
+            
+            if (dealInfo.paymentStatus !== newStatus) {
+                await prisma.deal.update({ where: { id }, data: { paymentStatus: newStatus as any } });
+            }
+        }
+
+        revalidatePath('/app/deals');
+        return { success: true };
+    } catch(e) {
+        return { success: false, message: 'Gagal update deal' };
+    }
+}
+
+
 export async function updateDealStatus(id: string, status: string) {
     const session = await getSession()
     if (!session) return { success: false, message: 'Unauthorized' }
@@ -734,12 +793,76 @@ export async function deletePayment(id: string, dealId: string) {
 
     try {
         await prisma.payment.delete({ where: { id } })
+        
+        const dealInfo = await prisma.deal.findUnique({
+            where: { id: dealId },
+            include: { payments: true }
+        });
+        if (dealInfo) {
+            const totalPaid = dealInfo.payments.reduce((s: number, p: any) => s + p.amount, 0);
+            let newStatus = 'PENDING';
+            if (totalPaid >= dealInfo.dealPrice) newStatus = 'COMPLETED';
+            else if (totalPaid > 0) newStatus = 'IN_PROGRESS';
+            
+            if (dealInfo.paymentStatus !== newStatus) {
+                await prisma.deal.update({ where: { id: dealId }, data: { paymentStatus: newStatus as any } });
+            }
+        }
+
         revalidatePath('/app/deals')
         return { success: true }
     } catch {
         return { success: false, message: 'Gagal menghapus pembayaran' }
     }
 }
+
+export async function updatePayment(id: string, dealId: string, formData: FormData) {
+    const session = await getSession();
+    if (!session) return { success: false, message: 'Unauthorized' };
+
+    const amountRaw = formData.get('amount') as string;
+    const amount = parseFloat(amountRaw);
+    const paidAtRaw = formData.get('paidAt') as string;
+
+    try {
+        await prisma.payment.update({
+            where: { id },
+            data: {
+                amount: isNaN(amount) ? undefined : amount,
+                paymentType: (formData.get('paymentType') as any) || undefined,
+                paymentMethod: (formData.get('paymentMethod') as any) || undefined,
+                installmentNumber: formData.get('installmentNumber') ? parseInt(formData.get('installmentNumber') as string) : undefined,
+                paidAt: paidAtRaw ? new Date(paidAtRaw) : undefined,
+                notes: formData.get('notes') as string || undefined,
+            }
+        });
+
+        // Kalkulasi ulang status pembayaran Deal
+        const dealInfo = await prisma.deal.findUnique({
+            where: { id: dealId },
+            include: { payments: true }
+        });
+        if (dealInfo) {
+            const totalPaid = dealInfo.payments.reduce((s: number, p: any) => s + p.amount, 0);
+            let newStatus = 'PENDING';
+            if (totalPaid >= dealInfo.dealPrice) newStatus = 'COMPLETED';
+            else if (totalPaid > 0) newStatus = 'IN_PROGRESS';
+            
+            if (dealInfo.paymentStatus !== newStatus) {
+                await prisma.deal.update({
+                    where: { id: dealId },
+                    data: { paymentStatus: newStatus as any }
+                });
+            }
+        }
+
+        revalidatePath('/app/deals');
+        return { success: true };
+    } catch {
+        return { success: false, message: 'Gagal update pembayaran' };
+    }
+}
+
 
 // ─────────────────────────────────────────────
 // EXPENSES (Admin only)

@@ -11,9 +11,16 @@ export default function ListingPage() {
     const [loading, setLoading] = useState(true);
 
     async function load() {
+        // Tampilkan cache langsung tanpa delay
+        const cached = localStorage.getItem('listing_cache');
+        if (cached) {
+            try { setItems(JSON.parse(cached)); setLoading(false); } catch(e) {}
+        }
+
         try {
             const res = await getProperties();
             setItems(res);
+            localStorage.setItem('listing_cache', JSON.stringify(res));
         } catch (e) {
             console.error("Failed to load properties:", e);
         } finally {
@@ -118,7 +125,7 @@ export default function ListingPage() {
                 )}
             </div>
 
-            <AddPropertyModal />
+            <AddPropertyModal onSuccess={load} />
         </>
     );
 }

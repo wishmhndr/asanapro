@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { getClients, createClient, getSession } from '../../actions';
 import { Utils } from '@/lib/utils';
+import CurrencyInput from '@/components/CurrencyInput';
 
 export default function CrmPage() {
     const [items, setItems] = useState<any[]>([]);
@@ -205,11 +206,11 @@ export default function CrmPage() {
                                         </div>
                                         <div className="col-12 col-md-6">
                                             <label className="form-label small fw-semibold">Budget Min (Rp)</label>
-                                            <input name="minBudget" type="number" className="form-control rounded-4" placeholder="500000000" />
+                                            <CurrencyInput name="minBudget" className="form-control rounded-4" placeholder="500.000.000" />
                                         </div>
                                         <div className="col-12 col-md-6">
                                             <label className="form-label small fw-semibold">Budget Max (Rp)</label>
-                                            <input name="maxBudget" type="number" className="form-control rounded-4" placeholder="1000000000" />
+                                            <CurrencyInput name="maxBudget" className="form-control rounded-4" placeholder="1.000.000.000" />
                                         </div>
                                         <div className="col-12 col-md-6">
                                             <label className="form-label small fw-semibold">Tipe Properti Dicari</label>

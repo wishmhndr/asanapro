@@ -3,12 +3,11 @@
 import React, { useState } from 'react';
 import { addProperty } from './actions';
 import { useActionState } from 'react';
+import CurrencyInput from '@/components/CurrencyInput';
 
-export default function AddPropertyModal() {
+export default function AddPropertyModal({ onSuccess }: { onSuccess?: () => void }) {
     const [state, action, isPending] = useActionState(addProperty, null);
     const [images, setImages] = useState<string[]>([]);
-    const [priceDisplay, setPriceDisplay] = useState('');
-    const [priceValue, setPriceValue] = useState('');
 
     // Handle success - close modal and refresh
     React.useEffect(() => {
@@ -22,21 +21,12 @@ export default function AddPropertyModal() {
                 document.body.classList.remove('modal-open');
                 document.body.style.overflow = '';
 
-                // Refresh the page to show new property
-                window.location.href = '/app/listing';
+                // Refresh data via parameter callback
+                if (onSuccess) onSuccess();
+                else window.location.href = '/app/listing';
             }, 100);
         }
-    }, [state]);
-
-    const handlePriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const raw = e.target.value.replace(/\D/g, '');
-        setPriceValue(raw);
-        if (raw) {
-            setPriceDisplay(new Intl.NumberFormat('id-ID').format(Number(raw)));
-        } else {
-            setPriceDisplay('');
-        }
-    };
+    }, [state, onSuccess]);
 
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
@@ -95,15 +85,7 @@ export default function AddPropertyModal() {
 
                             <div className="col-md-6">
                                 <label className="form-label small fw-bold text-secondary">Harga (IDR)</label>
-                                <input
-                                    type="text"
-                                    required
-                                    value={priceDisplay}
-                                    onChange={handlePriceChange}
-                                    className="form-control form-control-lg rounded-4 border-2"
-                                    placeholder="1.500.000.000"
-                                />
-                                <input type="hidden" name="price" value={priceValue} />
+                                <CurrencyInput name="price" required className="form-control form-control-lg rounded-4 border-2" placeholder="1.500.000.000" />
                             </div>
 
                             <div className="col-md-6">

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Utils } from '@/lib/utils';
 import { getProperty, updateProperty, deleteProperty } from '@/app/actions';
+import CurrencyInput from '@/components/CurrencyInput';
 
 export default function ListingDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const router = useRouter();
@@ -164,7 +165,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
                         <div className="col-md-6">
                             <label className="form-label small fw-bold text-secondary">HARGA (IDR)</label>
-                            <input name="price" defaultValue={p.price} required type="number" className="form-control form-control-lg rounded-4 border-2" />
+                            <CurrencyInput name="price" defaultValue={p.price} required className="form-control form-control-lg rounded-4 border-2" />
                         </div>
 
                         <div className="col-md-6">

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { getClient, updateClient, addFollowUp, deleteFollowUp, deleteClient, getSession } from '@/app/actions';
 import { Utils } from '@/lib/utils';
+import CurrencyInput from '@/components/CurrencyInput';
 
 const followUpTypes = ['WHATSAPP', 'CALL', 'VISIT', 'MEETING', 'EMAIL'];
 const followUpColors: Record<string, string> = {
@@ -304,11 +305,11 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                                         </div>
                                         <div className="col-12 col-md-6">
                                             <label className="form-label small fw-semibold">Budget Min</label>
-                                            <input name="minBudget" type="number" defaultValue={client.minBudget || ''} className="form-control rounded-4" />
+                                            <CurrencyInput name="minBudget" defaultValue={client.minBudget || ''} className="form-control rounded-4" />
                                         </div>
                                         <div className="col-12 col-md-6">
                                             <label className="form-label small fw-semibold">Budget Max</label>
-                                            <input name="maxBudget" type="number" defaultValue={client.maxBudget || ''} className="form-control rounded-4" />
+                                            <CurrencyInput name="maxBudget" defaultValue={client.maxBudget || ''} className="form-control rounded-4" />
                                         </div>
                                         <div className="col-12 col-md-6">
                                             <label className="form-label small fw-semibold">Tipe Properti</label>

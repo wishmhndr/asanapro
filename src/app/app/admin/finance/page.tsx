@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { getExpenses, createExpense, deleteExpense, getAdminReports } from '../../../actions';
 import { Utils } from '@/lib/utils';
+import CurrencyInput from '@/components/CurrencyInput';
 
 export default function AdminFinancePage() {
     const [data, setData] = useState<any>(null);
@@ -188,7 +189,7 @@ export default function AdminFinancePage() {
                                     <div className="row g-3">
                                         <div className="col-12 col-md-6">
                                             <label className="form-label small fw-semibold">Jumlah (Rp) <span className="text-danger">*</span></label>
-                                            <input name="amount" type="number" required className="form-control rounded-4" />
+                                            <CurrencyInput name="amount" required className="form-control rounded-4" />
                                         </div>
                                         <div className="col-12 col-md-6">
                                             <label className="form-label small fw-semibold">Kategori</label>
