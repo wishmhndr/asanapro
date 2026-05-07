@@ -162,6 +162,7 @@ function AdminDashboard({ data }: { data: any }) {
                         <div className="col-6 col-md-3"><Link href="/app/crm" className="btn btn-outline-secondary w-100 rounded-4 small">+ Klien</Link></div>
                         <div className="col-6 col-md-3"><Link href="/app/admin/finance" className="btn btn-outline-secondary w-100 rounded-4 small">Keuangan</Link></div>
                         <div className="col-6 col-md-3"><Link href="/app/admin/team" className="btn btn-outline-secondary w-100 rounded-4 small">Tim</Link></div>
+                        <div className="col-12 mt-1"><Link href="/app/settings" className="btn btn-outline-secondary w-100 rounded-4 small">Pengaturan Akun</Link></div>
                     </div>
                 </div>
             </div>
@@ -223,8 +224,9 @@ function MarketingDashboard({ data }: { data: any }) {
                 <div className="card-body p-3 p-md-4">
                     <div className="fw-semibold mb-3">Aksi Cepat</div>
                     <div className="row g-2">
-                        <div className="col-6"><Link href="/app/crm" className="btn btn-dark w-100 rounded-4">+ Klien Baru</Link></div>
-                        <div className="col-6"><Link href="/app/deals" className="btn btn-outline-secondary w-100 rounded-4">+ Deal Baru</Link></div>
+                        <div className="col-6"><Link href="/app/crm" className="btn btn-dark w-100 rounded-4 small">+ Klien Baru</Link></div>
+                        <div className="col-6"><Link href="/app/deals" className="btn btn-outline-secondary w-100 rounded-4 small">+ Deal Baru</Link></div>
+                        <div className="col-12 mt-1"><Link href="/app/settings" className="btn btn-outline-secondary w-100 rounded-4 small">Pengaturan Akun</Link></div>
                     </div>
                 </div>
             </div>
